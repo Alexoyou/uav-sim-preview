@@ -1,0 +1,8 @@
+web-src/
+scripts/
+*.bat
+*.gd
+*.tscn
+*.cpp
+*.hpp
+*.py

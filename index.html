@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Simulator</title>
+<style>
+:root{
+  --pan:#121D27; --ln:#243440; --ink:#DEE8F0; --dim:#7C90A0; --amber:#F2B035;
+}
+html,body{margin:0;background:#0B1219;color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{padding:18px}
+#uav-sim{max-width:1120px;margin:0 auto}
+/* Chrome for the embedded sim. Scoped under #uav-sim so nothing reaches the
+   rest of the article. Palette matches the case-study page. */
+#uav-sim {
+  --pan: #121D27; --ln: #243440; --ink: #DEE8F0;
+  --dim: #7C90A0; --amber: #F2B035;
+  background: var(--pan);
+  border: 1px solid var(--ln);
+  border-radius: 10px;
+  overflow: hidden;
+  color: var(--ink);
+  font: 13px/1.45 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+#uav-sim .sim-stage { position: relative; background: #05090d; }
+
+#uav-sim iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 340px;
+  border: 0;
+}
+
+/* ---- the click-to-fly gate ---------------------------------------------- */
+#uav-sim .sim-gate {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5, 12, 18, .72);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  transition: opacity .18s ease;
+}
+#uav-sim .sim-gate.gone { opacity: 0; pointer-events: none; }
+#uav-sim .sim-gate-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 20px 30px;
+  border: 1px solid rgba(242, 176, 53, .5);
+  border-radius: 10px;
+  background: rgba(10, 19, 27, .82);
+  text-align: center;
+}
+#uav-sim .sim-gate-h {
+  font: 700 15px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .10em; text-transform: uppercase; color: var(--amber);
+}
+#uav-sim .sim-gate-p { font-size: 12.5px; color: var(--dim); }
+
+/* ---- the control bar ----------------------------------------------------- */
+#uav-sim .sim-bar {
+  display: flex; flex-wrap: wrap; gap: 18px 26px;
+  padding: 13px 16px;
+  border-top: 1px solid var(--ln);
+  background: #0E1821;
+}
+#uav-sim .sim-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#uav-sim .sim-label {
+  margin-right: 2px;
+  font: 600 10px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .10em; text-transform: uppercase; color: var(--dim);
+}
+
+#uav-sim .sim-btn {
+  padding: 7px 12px;
+  min-height: 34px;
+  background: #0A131B;
+  color: var(--ink);
+  border: 1px solid var(--ln);
+  border-radius: 5px;
+  font: 600 10.5px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+#uav-sim .sim-btn:hover { border-color: var(--amber); color: var(--amber); }
+#uav-sim .sim-btn.wide { padding-left: 16px; padding-right: 16px; }
+#uav-sim .sim-btn.on {
+  background: rgba(242, 176, 53, .14);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+#uav-sim .sim-note {
+  margin: 0;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--ln);
+  color: var(--dim);
+  font-size: 11.5px;
+}
+#uav-sim .sim-note kbd {
+  display: inline-block;
+  padding: 1px 5px; margin: 0 1px;
+  border: 1px solid var(--ln); border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #0A131B; color: var(--ink);
+  font: 600 10px/1.5 ui-monospace, Menlo, Consolas, monospace;
+}
+#uav-sim .sim-note strong { color: var(--ink); font-weight: 600; }
+
+@media (max-width: 640px) {
+  #uav-sim iframe { aspect-ratio: 3 / 4; min-height: 420px; }
+  #uav-sim .sim-bar { gap: 12px 14px; padding: 12px; }
+  #uav-sim .sim-btn { min-height: 40px; padding: 9px 12px; }
+  /* Pointer lock is meaningless on a touch screen -- the sim's own TOUCH control
+     is the input there, so the gate would only be a thing to dismiss. */
+  #uav-sim .sim-gate-p { display: none; }
+}
+
+/* ---- the readout strip --------------------------------------------------- */
+/* What the world buttons just did. The sim pushes this out at 4 Hz; without it
+   Wind and Time of day change the world with nothing on screen to say what to. */
+#uav-sim .sim-readout {
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ln);
+  background: #0A131B;
+}
+#uav-sim .sim-readout .ro { display: flex; align-items: baseline; gap: 7px; }
+#uav-sim .sim-readout i {
+  font: 600 9.5px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .11em; text-transform: uppercase; color: var(--dim);
+  font-style: normal;
+}
+#uav-sim .sim-readout b {
+  font: 600 11.5px/1 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--ink);
+}
+
+</style>
+</head>
+<body>
+<!-- The playable sim, embedded in the case-study page.
+
+     An IFRAME rather than an inline canvas: the Godot export is eleven files and
+     48 MB, so unlike the old Canvas widget it cannot be inlined into one HTML
+     document. The frame and the page ship together and are served from the same
+     origin.
+
+     allow="pointer-lock" is load-bearing. MouseFly captures the mouse
+     (_apply_mode -> Input.MOUSE_MODE_CAPTURED), which on the web is pointer lock,
+     and a cross-document frame does not get it unless the parent grants it. -->
+<div id="uav-sim">
+  <div class="sim-stage">
+    <!-- BOTH mechanisms, because they are not the same one and browsers disagree
+         about which they honour: `sandbox="... allow-pointer-lock"` is the older,
+         widely supported token, and `allow="pointer-lock"` is the Permissions
+         Policy successor that some builds still report as unrecognised. Granting
+         one and not the other is how a frame ends up throwing WrongDocumentError
+         the moment MouseFly asks for the mouse. -->
+    <iframe id="uavFrame" src="web-sim/index.html"
+            title="Playable UAV flight simulator"
+            sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-popups"
+            allow="pointer-lock; fullscreen; autoplay"
+            allowfullscreen
+            referrerpolicy="no-referrer"></iframe>
+
+    <!-- Pointer lock needs a user gesture; browsers will not grant it on load.
+         So the first click is an explicit one, and it says what it is about to
+         do rather than silently swallowing the cursor. -->
+    <div class="sim-gate" id="simGate">
+      <div class="sim-gate-inner">
+        <span class="sim-gate-h">Click to fly</span>
+        <span class="sim-gate-p">Then click the view once more &mdash; the browser only hands
+        over the mouse in response to a click <em>inside</em> the simulator.</span>
+        <span class="sim-gate-p">The mouse becomes the stick. <kbd>Esc</kbd> releases it;
+        click again to take it back.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sim-bar">
+    <div class="sim-group">
+      <span class="sim-label">Control law</span>
+      <button class="sim-btn on" data-cmd="mode_mousefly">MouseFly</button>
+      <button class="sim-btn" data-cmd="mode_assisted">Assisted</button>
+      <button class="sim-btn" data-cmd="mode_direct">Direct</button>
+      <button class="sim-btn" data-cmd="autopilot">Autopilot</button>
+    </div>
+    <div class="sim-group">
+      <span class="sim-label">View</span>
+      <button class="sim-btn" data-cmd="camera">Camera</button>
+      <button class="sim-btn" data-cmd="nightvision">Night vision</button>
+    </div>
+    <div class="sim-group">
+      <span class="sim-label">Weather</span>
+      <button class="sim-btn" data-cmd="wind">Wind</button>
+    </div>
+    <div class="sim-group">
+      <span class="sim-label">Time of day</span>
+      <button class="sim-btn" data-cmd="time_prev">&larr;</button>
+      <button class="sim-btn" data-cmd="time_next">&rarr;</button>
+    </div>
+    <div class="sim-group">
+      <span class="sim-label">Rate</span>
+      <button class="sim-btn" data-cmd="warp_down">&minus;</button>
+      <button class="sim-btn" data-cmd="warp_up">+</button>
+    </div>
+    <div class="sim-group">
+      <span class="sim-label">Reset</span>
+      <button class="sim-btn wide" data-cmd="reset">Back to trimmed flight</button>
+    </div>
+  </div>
+
+  <!-- What the buttons just did. The left status panel is off in this build, so the
+       world knobs would otherwise change things with nothing on screen to say what to.
+       Fed from the sim at 4 Hz. -->
+  <div class="sim-readout" id="simReadout">
+    <span class="ro"><i>Wind</i><b id="roWind">&mdash;</b></span>
+    <span class="ro"><i>Time</i><b id="roTime">&mdash;</b></span>
+    <span class="ro"><i>Sun</i><b id="roSun">&mdash;</b></span>
+    <span class="ro"><i>Mode</i><b id="roMode">&mdash;</b></span>
+    <span class="ro"><i>View</i><b id="roView">&mdash;</b></span>
+  </div>
+
+  <p class="sim-note">
+    Mouse flies it. <kbd>W</kbd><kbd>S</kbd> pitch &mdash; <kbd>S</kbd> raises the nose &mdash;
+    <kbd>A</kbd><kbd>D</kbd> roll, <kbd>Q</kbd><kbd>E</kbd> yaw,
+    <kbd>Shift</kbd>&#8202;/&#8202;<kbd>Ctrl</kbd> throttle.
+    On a touch screen use the <strong>TOUCH</strong> button inside the view.
+  </p>
+</div>
+
+<script>
+/* Drives the embedded sim from the page's own controls.
+
+   The buttons live in HTML, outside the frame, so they can be styled with the
+   article and reached with a thumb. They reach the simulation by posting a
+   message into the frame, where flight_live.gd's web_command() picks it up --
+   and every command there routes to the same function the keyboard already
+   calls, so a button and its shortcut cannot drift apart.
+
+   Nothing here touches flight. It presses the same buttons a person would. */
+(function () {
+  'use strict';
+  var host = document.getElementById('uav-sim');
+  if (!host) return;
+  var frame = document.getElementById('uavFrame');
+  var gate = document.getElementById('simGate');
+
+  /* OPENED FROM DISK. A browser will not fetch WebAssembly over file://, so the
+     engine's loader fails with a bare "Failed to fetch" and the page looks
+     broken for a reason it never explains. The rest of this page works fine
+     from disk, which makes it worse -- so say plainly what happened and what to
+     do, and do not leave a dead frame sitting there trying. */
+  if (location.protocol === 'file:') {
+    if (frame) { frame.removeAttribute('src'); frame.style.display = 'none'; }
+    if (gate) {
+      gate.style.cursor = 'default';
+      gate.innerHTML =
+        '<div class="sim-gate-inner">' +
+        '<span class="sim-gate-h">Open this over HTTP</span>' +
+        '<span class="sim-gate-p">The simulator is WebAssembly, and browsers refuse to load it ' +
+        'from a <code>file://</code> address. Everything else on this page works from disk; ' +
+        'the sim cannot.</span>' +
+        '<span class="sim-gate-p">Close this, double-click <strong>REVIEW.bat</strong> in the ' +
+        'Portfolio folder, and open the page from there.</span>' +
+        '</div>';
+    }
+    return;
+  }
+
+  function send(cmd) {
+    if (!frame || !frame.contentWindow) return;
+    /* Same origin -- page and export ship together -- so "*" costs nothing and
+       survives being served from a bare IP or a preview host. */
+    frame.contentWindow.postMessage({ uav: cmd }, '*');
+  }
+
+  /* The gate exists because pointer lock needs a user gesture: a browser will
+     not let the sim capture the mouse on load, and MouseFly IS the mouse. One
+     click hands the frame focus and the gesture at the same time. */
+  function open() {
+    if (!gate || gate.classList.contains('gone')) return;
+    gate.classList.add('gone');
+    if (frame) frame.focus();
+  }
+  if (gate) {
+    gate.addEventListener('click', open);
+    gate.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
+    gate.tabIndex = 0;
+  }
+
+  /* Mode buttons are a radio set; the rest are momentary. The highlight is the
+     page's own record of what it last asked for -- the sim remains the authority,
+     and [M] inside the frame can still change the mode without telling us. */
+  var modes = ['mode_mousefly', 'mode_assisted', 'mode_direct'];
+  host.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.sim-btn') : null;
+    if (!b || !host.contains(b)) return;
+    var cmd = b.getAttribute('data-cmd');
+    if (!cmd) return;
+    open();
+    send(cmd);
+    if (modes.indexOf(cmd) >= 0) {
+      host.querySelectorAll('.sim-btn[data-cmd^="mode_"]').forEach(function (o) {
+        o.classList.toggle('on', o === b);
+      });
+    }
+  });
+
+  /* The sim pushes its world state out at 4 Hz. Without this the Wind and Time of
+     day buttons change things with nothing on screen to say what they changed to,
+     because the status panel that would normally answer is off in this build. */
+  var ro = {
+    wind: document.getElementById('roWind'), time: document.getElementById('roTime'),
+    sun: document.getElementById('roSun'), mode: document.getElementById('roMode'),
+    view: document.getElementById('roView')
+  };
+  addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || typeof d !== 'object' || !d.uav_state) return;
+    var s = d.uav_state;
+    if (ro.wind) {
+      /* Surface AND aloft: the aeroplane climbs through the gradient between them,
+         so one number would be half the answer. Calm has no direction worth naming. */
+      ro.wind.textContent = s.wind_sfc > 0
+        ? s.wind + ' · ' + s.wind_sfc.toFixed(0) + '/' + s.wind_aloft.toFixed(0) +
+          ' m/s from ' + String(Math.round(s.wind_from)).padStart(3, '0') + '°'
+        : 'calm';
+    }
+    if (ro.time) ro.time.textContent = s.lst + (s.night ? '  · NV' : '');
+    if (ro.sun) ro.sun.textContent = (s.sun >= 0 ? '+' : '') + s.sun.toFixed(1) + '°';
+    if (ro.mode) ro.mode.textContent = s.mode || '—';
+    if (ro.view) ro.view.textContent = s.view || '—';
+  });
+
+  /* Arrow keys and space scroll the page; inside a flight sim they are controls.
+     Only swallow them while the frame actually has focus, so the article still
+     scrolls normally everywhere else. */
+  addEventListener('keydown', function (e) {
+    if (document.activeElement !== frame) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].indexOf(e.key) >= 0) {
+      e.preventDefault();
+    }
+  });
+})();
+
+</script>
+</body>
+</html>
