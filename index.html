@@ -330,6 +330,20 @@ body{padding:18px}
     if (!cmd) return;
     open();
     send(cmd);
+    /* RESET REPLACES THE AIRCRAFT, and the replacement comes with a fresh
+       PilotLink at the default control mode -- so reset quietly takes the mouse
+       off the stick and you have to press MouseFly again. The source is fixed for
+       the next export; until then the page reasserts the mode it last asked for.
+       The delay is not a race guard -- reset_fleet() is synchronous inside the
+       message handler -- it just keeps the two commands in separate frames, since
+       the reset also re-seats the terrain renderer. */
+    if (cmd === 'reset') {
+      var active = host.querySelector('.sim-btn[data-cmd^="mode_"].on');
+      if (active) {
+        var keep = active.getAttribute('data-cmd');
+        setTimeout(function () { send(keep); }, 120);
+      }
+    }
     if (modes.indexOf(cmd) >= 0) {
       host.querySelectorAll('.sim-btn[data-cmd^="mode_"]').forEach(function (o) {
         o.classList.toggle('on', o === b);
