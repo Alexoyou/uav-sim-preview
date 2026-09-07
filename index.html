@@ -266,42 +266,28 @@ body{padding:18px}
   var frame = document.getElementById('uavFrame');
   var gate = document.getElementById('simGate');
 
-  /* ESCAPE MUST NOT REACH THE ENGINE.
+  /* ONE THING THE BUILD CANNOT FIX ITSELF: Tab.
 
-     flight_live.gd ends its Esc handler with get_tree().quit(). On a desktop
-     build that closes the app; in a tab it tears the engine down and leaves a
-     dead canvas, which looks exactly like a crash. It takes two presses to
-     see: the browser eats the first Esc releasing pointer lock, and only the
-     second gets through.
+     Escape and the six stranding keys used to be swallowed here, because the
+     shipped .pck had no guard for them. It does now -- flight_live.gd releases
+     the mouse on Escape without quitting, and returns early on P, G, F, H, J
+     and O -- so those patches are gone and the build alone decides.
 
-     The source is fixed for the next export. This fixes the build that is
-     already deployed. window is the first target in the capture phase and
-     this is registered on frame load, before the engine registers anything,
-     so it runs first. stopImmediatePropagation only -- no preventDefault, so
-     the browser still handles Esc for pointer lock itself. */
-  function guardEscape() {
+     Tab is different. It legitimately cycles the HUD, so the sim must receive
+     it, but in a browser it ALSO moves focus, and focus leaving the frame means
+     no key reaches the simulator again. Only the page can stop that, because
+     only the page owns the document focus would move within. So this one stays:
+     the event still reaches the engine, it just loses its browser default. */
+  function guardTab() {
     try {
       var w = frame && frame.contentWindow;
       if (!w) return;
-      /* Keys right on a desktop build and wrong in a tab. P swaps the world
-         renderer, G parks on ground in a build with no take-off, F and H work
-         gear and flaps the web build already dropped as out of scope, J grows a
-         formation, O starts a scripted demo. Each strands a visitor somewhere
-         with no manual and no undo. Blocked here until the next export carries
-         the source guard. */
-      var BLOCKED_KEYS = { p: 1, g: 1, f: 1, h: 1, j: 1, o: 1 };
       w.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' || e.keyCode === 27) { e.stopImmediatePropagation(); return; }
-        if (e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
-        var k = (e.key || '').toLowerCase();
-        if (BLOCKED_KEYS[k]) { e.stopImmediatePropagation(); e.preventDefault(); return; }
-        /* Tab still cycles the HUD -- it just must not move focus, because focus
-           leaving the frame means no key reaches the simulator again. */
-        if (k === 'tab') e.preventDefault();
+        if ((e.key || '').toLowerCase() === 'tab') e.preventDefault();
       }, true);
     } catch (err) { /* different origin: nothing we can do, and nothing we need to */ }
   }
-  if (frame) frame.addEventListener('load', guardEscape);
+  if (frame) frame.addEventListener('load', guardTab);
 
   /* OPENED FROM DISK. A browser will not fetch WebAssembly over file://, so the
      engine's loader fails with a bare "Failed to fetch" and the page looks
@@ -399,23 +385,15 @@ body{padding:18px}
     holdThrottle(b, b.getAttribute('data-thr') === 'up' ? 'Shift' : 'Control');
   });
 
-  /* CAMERA: three views, not five.
+  /* The camera and reset patches that used to sit here are GONE, and removing
+     the camera one was not optional. camera_rig.gd now stops its cycle at
+     Cockpit on web, so the page counting presses through a five-view order
+     would have overshot: from Cockpit it computed three presses, and against a
+     three-view cycle that lands straight back on Cockpit. A workaround for a
+     bug that has been fixed is not merely redundant, it is a new bug.
 
-     cycle_view() steps through a fixed order and there is no way to ask the
-     sim for a particular view, so the page counts the presses to the next
-     allowed one and sends that many. Consecutive presses never rest on a
-     skipped view, so nothing flickers. */
-  var VIEW_ORDER = ['Chase', 'Orbit', 'Cockpit', 'Flyby', 'Observer'];
-  var VIEW_ALLOWED = { Chase: 1, Orbit: 1, Cockpit: 1 };
-  var currentView = null;
-  function pressesToNextAllowed() {
-    var i = VIEW_ORDER.indexOf(currentView);
-    if (i < 0) return 1;                       /* not heard from the sim yet */
-    for (var k = 1; k <= VIEW_ORDER.length; k++)
-      if (VIEW_ALLOWED[VIEW_ORDER[(i + k) % VIEW_ORDER.length]]) return k;
-    return 1;
-  }
-
+     reset_fleet() likewise remembers the control mode across the aircraft swap
+     now, so the page no longer re-asserts it. */
   var modes = ['mode_mousefly', 'mode_assisted', 'mode_direct'];
   host.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.sim-btn') : null;
@@ -423,26 +401,7 @@ body{padding:18px}
     var cmd = b.getAttribute('data-cmd');
     if (!cmd) return;
     open();
-    if (cmd === 'camera') {
-      var n = pressesToNextAllowed();
-      for (var v = 0; v < n; v++) send('camera');
-    } else {
-      send(cmd);
-    }
-    /* RESET REPLACES THE AIRCRAFT, and the replacement comes with a fresh
-       PilotLink at the default control mode -- so reset quietly takes the mouse
-       off the stick and you have to press MouseFly again. The source is fixed for
-       the next export; until then the page reasserts the mode it last asked for.
-       The delay is not a race guard -- reset_fleet() is synchronous inside the
-       message handler -- it just keeps the two commands in separate frames, since
-       the reset also re-seats the terrain renderer. */
-    if (cmd === 'reset') {
-      var active = host.querySelector('.sim-btn[data-cmd^="mode_"].on');
-      if (active) {
-        var keep = active.getAttribute('data-cmd');
-        setTimeout(function () { send(keep); }, 120);
-      }
-    }
+    send(cmd);
     if (modes.indexOf(cmd) >= 0) {
       host.querySelectorAll('.sim-btn[data-cmd^="mode_"]').forEach(function (o) {
         o.classList.toggle('on', o === b);
@@ -473,14 +432,9 @@ body{padding:18px}
     if (ro.time) ro.time.textContent = s.lst + (s.night ? '  · NV' : '');
     if (ro.sun) ro.sun.textContent = (s.sun >= 0 ? '+' : '') + s.sun.toFixed(1) + '°';
     if (ro.mode) ro.mode.textContent = s.mode || '—';
+    /* No correction needed any more: the build itself only offers Chase, Orbit
+       and Cockpit, whether reached by this button or by [C] inside the frame. */
     if (ro.view) ro.view.textContent = s.view || '—';
-    /* [C] inside the frame cycles without going through the button, so it can
-       land on a view the page does not offer. Step off it. */
-    if (s.view) {
-      currentView = s.view;
-      if (VIEW_ORDER.indexOf(s.view) >= 0 && !VIEW_ALLOWED[s.view])
-        for (var v = 0; v < pressesToNextAllowed(); v++) send('camera');
-    }
   });
 
   /* Arrow keys and space scroll the page; inside a flight sim they are controls.
