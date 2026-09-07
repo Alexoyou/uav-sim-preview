@@ -267,8 +267,21 @@ body{padding:18px}
     try {
       var w = frame && frame.contentWindow;
       if (!w) return;
+      /* Keys right on a desktop build and wrong in a tab. P swaps the world
+         renderer, G parks on ground in a build with no take-off, F and H work
+         gear and flaps the web build already dropped as out of scope, J grows a
+         formation, O starts a scripted demo. Each strands a visitor somewhere
+         with no manual and no undo. Blocked here until the next export carries
+         the source guard. */
+      var BLOCKED_KEYS = { p: 1, g: 1, f: 1, h: 1, j: 1, o: 1 };
       w.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' || e.keyCode === 27) e.stopImmediatePropagation();
+        if (e.key === 'Escape' || e.keyCode === 27) { e.stopImmediatePropagation(); return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;   // leave browser shortcuts alone
+        var k = (e.key || '').toLowerCase();
+        if (BLOCKED_KEYS[k]) { e.stopImmediatePropagation(); e.preventDefault(); return; }
+        /* Tab still cycles the HUD -- it just must not move focus, because focus
+           leaving the frame means no key reaches the simulator again. */
+        if (k === 'tab') e.preventDefault();
       }, true);
     } catch (err) { /* different origin: nothing we can do, and nothing we need to */ }
   }
