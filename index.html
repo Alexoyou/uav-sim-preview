@@ -114,8 +114,10 @@ body{padding:18px}
   #uav-sim iframe { aspect-ratio: 3 / 4; min-height: 420px; }
   #uav-sim .sim-bar { gap: 12px 14px; padding: 12px; }
   #uav-sim .sim-btn { min-height: 40px; padding: 9px 12px; }
-  /* Pointer lock is meaningless on a touch screen -- the sim's own TOUCH control
-     is the input there, so the gate would only be a thing to dismiss. */
+  /* Pointer lock is meaningless on a touch screen, so the gate would only be a
+     thing to dismiss. The web build has no in-sim touch control either -- it was
+     removed as a duplicate of keys that already exist -- so on a phone the inputs
+     are the drag on the view and the buttons under it, throttle included. */
   #uav-sim .sim-gate-p { display: none; }
 }
 
@@ -138,6 +140,11 @@ body{padding:18px}
   font: 600 11.5px/1 ui-monospace, Menlo, Consolas, monospace;
   color: var(--ink);
 }
+
+/* The throttle pair is held rather than clicked, so it is sized for a thumb
+   and marked as the one control that repeats while down. */
+.sim-btn.thr{min-width:44px;font-size:1rem;line-height:1;padding-top:7px;padding-bottom:7px}
+.sim-btn.thr.is-held{background:var(--amber);color:#0B1219;border-color:var(--amber)}
 
 </style>
 </head>
@@ -190,6 +197,14 @@ body{padding:18px}
       <button class="sim-btn" data-cmd="autopilot">Autopilot</button>
     </div>
     <div class="sim-group">
+      <!-- Throttle is the only axis with no other on-screen control. These hold
+           the same key the keyboard holds, so the button and the shortcut cannot
+           drift apart. -->
+      <span class="sim-label">Throttle</span>
+      <button class="sim-btn thr" data-thr="up" aria-label="increase throttle">&plus;</button>
+      <button class="sim-btn thr" data-thr="down" aria-label="decrease throttle">&minus;</button>
+    </div>
+    <div class="sim-group">
       <span class="sim-label">View</span>
       <button class="sim-btn" data-cmd="camera">Camera</button>
       <button class="sim-btn" data-cmd="nightvision">Night vision</button>
@@ -228,8 +243,9 @@ body{padding:18px}
   <p class="sim-note">
     Mouse flies it. <kbd>W</kbd><kbd>S</kbd> pitch &mdash; <kbd>S</kbd> raises the nose &mdash;
     <kbd>A</kbd><kbd>D</kbd> roll, <kbd>Q</kbd><kbd>E</kbd> yaw,
-    <kbd>Shift</kbd>&#8202;/&#8202;<kbd>Ctrl</kbd> throttle.
-    On a touch screen use the <strong>TOUCH</strong> button inside the view.
+    <kbd>Shift</kbd>&#8202;/&#8202;<kbd>Ctrl</kbd> throttle &mdash; or the
+    <strong>Throttle</strong> buttons above, which hold the same keys and are the
+    only way to change power on a touchscreen.
   </p>
 </div>
 
@@ -302,7 +318,7 @@ body{padding:18px}
         '<span class="sim-gate-p">The simulator is WebAssembly, and browsers refuse to load it ' +
         'from a <code>file://</code> address. Everything else on this page works from disk; ' +
         'the sim cannot.</span>' +
-        '<span class="sim-gate-p">Close this, double-click <strong>REVIEW.bat</strong> in the ' +
+        '<span class="sim-gate-p">Close this, double-click <strong>0 - START HERE.bat</strong> in the ' +
         'Portfolio folder, and open the page from there.</span>' +
         '</div>';
     }
@@ -335,6 +351,54 @@ body{padding:18px}
   /* Mode buttons are a radio set; the rest are momentary. The highlight is the
      page's own record of what it last asked for -- the sim remains the authority,
      and [M] inside the frame can still change the mode without telling us. */
+  /* THROTTLE, held rather than commanded.
+
+     input_source.gd reads Input.is_key_pressed(KEY_SHIFT) and KEY_CTRL every
+     frame -- throttle is polled state, not an event -- so holding the key is
+     the whole mechanism. There is no web_command case for throttle and adding
+     one would need a re-export, but none is needed: dispatch the keydown into
+     the frame and Godot polls it exactly as it polls a real one.
+
+     Released on pointerup ANYWHERE and on blur, not just on the button: a
+     finger that slides off the button before lifting would otherwise leave the
+     throttle wide open with nothing on screen holding it. */
+  var heldThr = null;
+  function throttleKey(down, which) {
+    var w = frame && frame.contentWindow, d = frame && frame.contentDocument;
+    if (!w || !d) return;
+    var target = d.getElementById('canvas') || d;
+    var isShift = which === 'Shift';
+    target.dispatchEvent(new w.KeyboardEvent(down ? 'keydown' : 'keyup', {
+      key: which, code: isShift ? 'ShiftLeft' : 'ControlLeft',
+      keyCode: isShift ? 16 : 17, which: isShift ? 16 : 17,
+      shiftKey: isShift && down, ctrlKey: !isShift && down,
+      bubbles: true, cancelable: true
+    }));
+  }
+  function holdThrottle(btn, which) {
+    var startHold = function (e) {
+      e.preventDefault();
+      open();
+      if (heldThr) throttleKey(false, heldThr.which);
+      heldThr = { which: which, btn: btn };
+      btn.classList.add('is-held');
+      throttleKey(true, which);
+    };
+    btn.addEventListener('pointerdown', startHold);
+  }
+  function releaseThrottle() {
+    if (!heldThr) return;
+    throttleKey(false, heldThr.which);
+    heldThr.btn.classList.remove('is-held');
+    heldThr = null;
+  }
+  addEventListener('pointerup', releaseThrottle);
+  addEventListener('pointercancel', releaseThrottle);
+  addEventListener('blur', releaseThrottle);
+  Array.prototype.forEach.call(host.querySelectorAll('[data-thr]'), function (b) {
+    holdThrottle(b, b.getAttribute('data-thr') === 'up' ? 'Shift' : 'Control');
+  });
+
   var modes = ['mode_mousefly', 'mode_assisted', 'mode_direct'];
   host.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.sim-btn') : null;
