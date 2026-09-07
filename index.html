@@ -206,7 +206,7 @@ body{padding:18px}
     </div>
     <div class="sim-group">
       <span class="sim-label">View</span>
-      <button class="sim-btn" data-cmd="camera">Camera</button>
+      <button class="sim-btn" data-cmd="camera" title="Chase, Orbit and Cockpit">Camera</button>
       <button class="sim-btn" data-cmd="nightvision">Night vision</button>
     </div>
     <div class="sim-group">
@@ -399,6 +399,23 @@ body{padding:18px}
     holdThrottle(b, b.getAttribute('data-thr') === 'up' ? 'Shift' : 'Control');
   });
 
+  /* CAMERA: three views, not five.
+
+     cycle_view() steps through a fixed order and there is no way to ask the
+     sim for a particular view, so the page counts the presses to the next
+     allowed one and sends that many. Consecutive presses never rest on a
+     skipped view, so nothing flickers. */
+  var VIEW_ORDER = ['Chase', 'Orbit', 'Cockpit', 'Flyby', 'Observer'];
+  var VIEW_ALLOWED = { Chase: 1, Orbit: 1, Cockpit: 1 };
+  var currentView = null;
+  function pressesToNextAllowed() {
+    var i = VIEW_ORDER.indexOf(currentView);
+    if (i < 0) return 1;                       /* not heard from the sim yet */
+    for (var k = 1; k <= VIEW_ORDER.length; k++)
+      if (VIEW_ALLOWED[VIEW_ORDER[(i + k) % VIEW_ORDER.length]]) return k;
+    return 1;
+  }
+
   var modes = ['mode_mousefly', 'mode_assisted', 'mode_direct'];
   host.addEventListener('click', function (e) {
     var b = e.target.closest ? e.target.closest('.sim-btn') : null;
@@ -406,7 +423,12 @@ body{padding:18px}
     var cmd = b.getAttribute('data-cmd');
     if (!cmd) return;
     open();
-    send(cmd);
+    if (cmd === 'camera') {
+      var n = pressesToNextAllowed();
+      for (var v = 0; v < n; v++) send('camera');
+    } else {
+      send(cmd);
+    }
     /* RESET REPLACES THE AIRCRAFT, and the replacement comes with a fresh
        PilotLink at the default control mode -- so reset quietly takes the mouse
        off the stick and you have to press MouseFly again. The source is fixed for
@@ -452,6 +474,13 @@ body{padding:18px}
     if (ro.sun) ro.sun.textContent = (s.sun >= 0 ? '+' : '') + s.sun.toFixed(1) + '°';
     if (ro.mode) ro.mode.textContent = s.mode || '—';
     if (ro.view) ro.view.textContent = s.view || '—';
+    /* [C] inside the frame cycles without going through the button, so it can
+       land on a view the page does not offer. Step off it. */
+    if (s.view) {
+      currentView = s.view;
+      if (VIEW_ORDER.indexOf(s.view) >= 0 && !VIEW_ALLOWED[s.view])
+        for (var v = 0; v < pressesToNextAllowed(); v++) send('camera');
+    }
   });
 
   /* Arrow keys and space scroll the page; inside a flight sim they are controls.
