@@ -250,6 +250,30 @@ body{padding:18px}
   var frame = document.getElementById('uavFrame');
   var gate = document.getElementById('simGate');
 
+  /* ESCAPE MUST NOT REACH THE ENGINE.
+
+     flight_live.gd ends its Esc handler with get_tree().quit(). On a desktop
+     build that closes the app; in a tab it tears the engine down and leaves a
+     dead canvas, which looks exactly like a crash. It takes two presses to
+     see: the browser eats the first Esc releasing pointer lock, and only the
+     second gets through.
+
+     The source is fixed for the next export. This fixes the build that is
+     already deployed. window is the first target in the capture phase and
+     this is registered on frame load, before the engine registers anything,
+     so it runs first. stopImmediatePropagation only -- no preventDefault, so
+     the browser still handles Esc for pointer lock itself. */
+  function guardEscape() {
+    try {
+      var w = frame && frame.contentWindow;
+      if (!w) return;
+      w.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' || e.keyCode === 27) e.stopImmediatePropagation();
+      }, true);
+    } catch (err) { /* different origin: nothing we can do, and nothing we need to */ }
+  }
+  if (frame) frame.addEventListener('load', guardEscape);
+
   /* OPENED FROM DISK. A browser will not fetch WebAssembly over file://, so the
      engine's loader fails with a bare "Failed to fetch" and the page looks
      broken for a reason it never explains. The rest of this page works fine
